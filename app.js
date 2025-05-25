@@ -3,6 +3,8 @@
 
 const net = require("net");
 const WebSocket = require("ws");
+const express = require('express');
+const path = require('path');
 
 const INVERTER_IP = "192.168.1.12";
 const PORT = 8000;
@@ -102,140 +104,58 @@ function sendReadInput() {
   console.log("Sent read input registers request");
 }
 
-// Connect to inverter
-const client = net.createConnection({ host: INVERTER_IP, port: PORT }, () => {
-  console.log(`Connected to inverter at ${INVERTER_IP}:${PORT}`);
-  // initial read and start periodic polling
-  sendReadInput();
-  setInterval(sendReadInput, READ_INTERVAL);
-});
+// Comment out TCP connection and related logic, and mock data for frontend
+// const client = net.createConnection({ host: INVERTER_IP, port: PORT }, () => {
+//   console.log(`Connected to inverter at ${INVERTER_IP}:${PORT}`);
+//   // initial read and start periodic polling
+//   sendReadInput();
+//   setInterval(sendReadInput, READ_INTERVAL);
+// });
 
-client.on("data", (chunk) => {
-  parserBuffer = Buffer.concat([parserBuffer, chunk]);
-  parseFrames();
-});
+// client.on("data", (chunk) => {
+//   parserBuffer = Buffer.concat([parserBuffer, chunk]);
+//   parseFrames();
+// });
 
-client.on("close", () => {
-  console.log("Connection closed");
-  process.exit(0);
-});
+// client.on("close", () => {
+//   console.log("Connection closed");
+//   process.exit(0);
+// });
 
-client.on("error", (err) => {
-  console.error("Connection error:", err);
-  process.exit(1);
-});
+// client.on("error", (err) => {
+//   console.error("Connection error:", err);
+//   process.exit(1);
+// });
 
-// Parse incoming frames
-function parseFrames() {
-  while (true) {
-    if (parserBuffer.length < 2) break;
-    // sync prefix
-    if (parserBuffer[0] !== 0xa1 || parserBuffer[1] !== 0x1a) {
-      const idx = parserBuffer.indexOf(0xa1, 1);
-      if (idx < 0) {
-        parserBuffer = Buffer.alloc(0);
-        break;
-      }
-      parserBuffer = parserBuffer.slice(idx);
-      continue;
-    }
-    if (parserBuffer.length < 6) break;
-    const len = parserBuffer[5] * 256 + parserBuffer[4];
-    const fullLen = len + 6;
-    if (parserBuffer.length < fullLen) break;
-    const frame = parserBuffer.slice(0, fullLen);
-    parserBuffer = parserBuffer.slice(fullLen);
-    handleFrame(frame);
-  }
+// Instead, periodically send mock data to WebSocket clients
+function randomInt(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-// Handle a complete TCP frame
-function handleFrame(frame) {
-  // Debug: print raw frame data as hex
-  console.log(
-    "Raw frame:",
-    frame
-      .toString("hex")
-      .match(/.{1,2}/g)
-      .join(" ")
-  );
-  const fn = frame[7];
-  if (fn === 194) {
-    // TRANSLATE - read input response
-    // Read registers as Java LocalOverviewFragment
-    const r7 = getRegister2(frame, 7);
-    const r8 = getRegister2(frame, 8);
-    const r9 = getRegister2(frame, 9);
-    const outInv = getRegister2(frame, 16);
-    const inInv = getRegister2(frame, 17);
-    const outGrid = getRegister2(frame, 26);
-    const inGrid = getRegister2(frame, 27);
-
-    // PV flow calculation: sum of three PV registers for non-AC charger
-    const totalPv = r7 + r8 + r9;
-    // Consumption: (outInv - inInv) + (inGrid - outGrid), floor at 0
-    let consumption = outInv - inInv + (inGrid - outGrid);
-    if (consumption < 0) consumption = 0;
-
-    console.log("PV Flow:", totalPv + " W");
-    console.log("Consumption:", consumption + " W");
-    // Lấy và hiển thị tất cả các giá trị register có thể lấy từ frame
-    const allRegisters = [];
-    for (let i = 0; ; i++) {
-      const p = i * 2 + 35;
-      if (p + 1 >= frame.length) break;
-      allRegisters.push(getRegister2(frame, i));
-    }
-
-    const value4 = allRegisters[4] / 10; // Điện áp
-    const value5 = allRegisters[5]; // % pin
-
-    const value7 = allRegisters[7]; // PV1
-    const value8 = allRegisters[8]; // Pv2
-    const v10 = allRegisters[10]; // điện áp sạc vào pin hoặc xả ra
-    const v9 = allRegisters[9]; //
-
-    console.log("Điện áp: ", value4);
-    console.log("% pin: ", value5);
-    console.log("PV1: ", value7);
-    console.log("PV2: ", value8);
-    console.log("Điện áp sạc/xả: ", v10);
-    console.log("value 9 ", v9);
-    console.log("Lấy lưới: ", allRegisters[27]);
-
-    console.log("Tất cả giá trị register:");
-    allRegisters.forEach((val, idx) => {
-      console.log(`Register[${idx}]: ${val}`);
-    });
-
-    const data = {
-      voltage: value4,
-      percent: value5,
-      pv1: value7,
-      pv2: value8,
-      chargeVoltage: v10,
-      value9: v9,
-      allRegisters,
-      pvFlow: totalPv,
-      consumption,
-      useGrid: allRegisters[27],
-      totalGrid: allRegisters[37] / 10,
-      totalChargeToday: allRegisters[33] / 10,
-      totalDischargeToday: allRegisters[34] / 10,
-      backupPower: allRegisters[24],
-    };
-    broadcast(data);
-  }
+function generateMockData() {
+  const allRegisters = Array.from({ length: 40 }, (_, i) => randomInt(0, 5000));
+  return {
+    voltage: randomInt(220, 240),
+    percent: randomInt(20, 100),
+    pv1: randomInt(0, 2000),
+    pv2: randomInt(0, 2000),
+    chargeVoltage: randomInt(-2000, 2000),
+    value9: randomInt(0, 1000),
+    allRegisters,
+    pvFlow: allRegisters[7] + allRegisters[8] + allRegisters[9],
+    consumption: randomInt(0, 5000),
+    useGrid: allRegisters[27],
+    totalGrid: allRegisters[37] / 10,
+    totalChargeToday: allRegisters[33] / 10,
+    totalDischargeToday: allRegisters[34] / 10,
+    backupPower: allRegisters[24],
+  };
 }
 
-// Mirror of FrameTool.getRegister2
-function getRegister2(buf, index) {
-  const p = index * 2 + 35;
-  if (p + 1 >= buf.length) return 0;
-  const low = buf[p];
-  const high = buf[p + 1];
-  return (high << 8) + low;
-}
+setInterval(() => {
+  const data = generateMockData();
+  broadcast(data);
+}, READ_INTERVAL);
 
 const wss = new WebSocket.Server({ port: 8080 });
 let lastData = null;
@@ -249,4 +169,21 @@ function broadcast(data) {
 }
 wss.on("connection", function connection(ws) {
   if (lastData) ws.send(JSON.stringify(lastData));
+});
+
+// Thêm express để serve file tĩnh (monitor.html)
+const app = express();
+
+// Serve tất cả file tĩnh trong thư mục hiện tại
+app.use(express.static(__dirname));
+
+// Tùy chọn: chuyển hướng / về monitor.html
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'monitor.html'));
+});
+
+// Khởi động HTTP server trên PORT phù hợp với Render
+const HTTP_PORT = process.env.PORT || 3000;
+app.listen(HTTP_PORT, () => {
+  console.log(`HTTP server running at http://localhost:${HTTP_PORT}`);
 });
