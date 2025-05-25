@@ -1,0 +1,14 @@
+{
+  "name": "luxpower-sna-6kw",
+  "version": "1.0.0",
+  "description": "Lấy dữ liệu từ biến tầng Luxpower SNA 6KW.",
+  "main": "app.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "ws": "^8.18.2"
+  }
+}
